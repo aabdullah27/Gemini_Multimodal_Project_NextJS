@@ -3,9 +3,14 @@ import { TranscriptionService } from './transcriptionService';
 import { pcmToWav } from '../utils/audioUtils';
 
 const MODEL = "models/gemini-2.0-flash-exp";
-const API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 const HOST = "generativelanguage.googleapis.com";
-const WS_URL = `wss://${HOST}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${API_KEY}`;
+
+// Add type declaration for window object
+declare global {
+  interface Window {
+    GEMINI_API_KEY?: string;
+  }
+}
 
 export class GeminiWebSocket {
   private ws: WebSocket | null = null;
@@ -25,6 +30,8 @@ export class GeminiWebSocket {
   private onTranscriptionCallback: ((text: string) => void) | null = null;
   private transcriptionService: TranscriptionService;
   private accumulatedPcmData: string[] = [];
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
 
   constructor(
     onMessage: (text: string) => void, 
@@ -49,8 +56,31 @@ export class GeminiWebSocket {
     if (this.ws?.readyState === WebSocket.OPEN) {
       return;
     }
+
+    // Get API key from localStorage or environment variable
+    let apiKey = '';
+    if (typeof window !== 'undefined') {
+      apiKey = localStorage.getItem('gemini-api-key') || '';
+    }
+    apiKey = apiKey || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+
+    if (!apiKey) {
+      console.error('No Gemini API key found. Please set it in the settings.');
+      return;
+    }
+
+    const wsUrl = `wss://${HOST}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
     
-    this.ws = new WebSocket(WS_URL);
+    try {
+      this.ws = new WebSocket(wsUrl);
+      this.setupWebSocketHandlers();
+    } catch (error) {
+      console.error('Failed to connect to Gemini:', error);
+    }
+  }
+
+  private setupWebSocketHandlers() {
+    if (!this.ws) return;
 
     this.ws.onopen = () => {
       this.isConnected = true;
@@ -75,15 +105,18 @@ export class GeminiWebSocket {
     };
 
     this.ws.onerror = (error) => {
-      console.error("[WebSocket] Error:", error);
+      console.error('WebSocket error:', error);
     };
 
     this.ws.onclose = (event) => {
-      this.isConnected = false;
-      
-      // Only attempt to reconnect if we haven't explicitly called disconnect
-      if (!event.wasClean && this.isSetupComplete) {
-        setTimeout(() => this.connect(), 1000);
+      if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
+        setTimeout(() => {
+          this.connect();
+          this.reconnectAttempts++;
+        }, Math.min(1000 * this.reconnectAttempts, 5000));
+      } else {
+        this.isConnected = false;
+        this.reconnectAttempts = 0;
       }
     };
   }

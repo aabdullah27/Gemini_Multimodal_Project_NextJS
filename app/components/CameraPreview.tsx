@@ -263,27 +263,23 @@ export default function CameraPreview({ onTranscription }: CameraPreviewProps) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="relative">
+    <Card className="relative w-[640px] aspect-video bg-zinc-100 dark:bg-zinc-900 rounded-lg overflow-hidden border-zinc-200 dark:border-zinc-800">
+      <CardContent className="p-0">
         <video
           ref={videoRef}
           autoPlay
           playsInline
-          className="w-[640px] h-[480px] bg-muted rounded-lg overflow-hidden"
+          className="w-full h-full bg-muted rounded-lg overflow-hidden"
         />
         
         {/* Connection Status Overlay */}
-        {isStreaming && connectionStatus !== 'connected' && (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg backdrop-blur-sm">
-            <div className="text-center space-y-2">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto" />
-              <p className="text-white font-medium">
-                {connectionStatus === 'connecting' ? 'Connecting to Gemini...' : 'Disconnected'}
-              </p>
-              <p className="text-white/70 text-sm">
-                Please wait while we establish a secure connection
-              </p>
-            </div>
+        {isStreaming && (
+          <div className={`absolute top-2 left-2 flex items-center gap-2 px-3 py-1 rounded-full backdrop-blur-sm ${connectionStatus === 'connected' ? 'bg-green-500/20 text-green-500' : connectionStatus === 'connecting' ? 'bg-yellow-500/20 text-yellow-500' : 'bg-red-500/20 text-red-500'}`}>
+            <div className="w-2 h-2 rounded-full animate-pulse" />
+            <span className="text-sm font-medium">
+              {connectionStatus === 'connected' ? 'Connected' : 
+               connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+            </span>
           </div>
         )}
 
@@ -298,9 +294,9 @@ export default function CameraPreview({ onTranscription }: CameraPreviewProps) {
         >
           {isStreaming ? <VideoOff className="h-6 w-6" /> : <Video className="h-6 w-6" />}
         </Button>
-      </div>
+      </CardContent>
       {isStreaming && (
-        <div className="w-[640px] h-2 rounded-full bg-green-100">
+        <div className="w-full h-2 rounded-full bg-green-100">
           <div
             className="h-full rounded-full transition-all bg-green-500"
             style={{ 
@@ -311,6 +307,6 @@ export default function CameraPreview({ onTranscription }: CameraPreviewProps) {
         </div>
       )}
       <canvas ref={videoCanvasRef} className="hidden" />
-    </div>
+    </Card>
   );
 }

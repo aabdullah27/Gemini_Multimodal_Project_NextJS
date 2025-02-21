@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.indigo-pink.min.css">
+    <script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
+
+    <style>
+        #videoElement {
+            width: 640px;
+            height: 480px;
+            border-radius: 20px;
+        }
+
+        #canvasElement {
+            display: none;
+            width: 640px;
+            height: 480px;
+        }
+
+        .demo-content {
+            padding: 20px;
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            gap: 20px;
+            justify-content: center;
+        }
+
+        .video-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .button-group {
+            margin-bottom: 20px;
+        }
+
+        #chatLog {
+            width: 400px;
+            height: 560px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 0;
+            background-color: #f5f5f5;
+        }
+
+        #chatLog p {
+            margin: 8px 0;
+            padding: 12px;
+            border-radius: 8px;
+            background-color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+
+        #chatLog p:nth-child(odd) {
+            background-color: #e8eaf6;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="mdl-layout mdl-js-layout mdl-layout--fixed-header">
+        <header class="mdl-layout__header">
+            <div class="mdl-layout__header-row">
+                <!-- Title -->
+                <span class="mdl-layout-title">Gemini Live Demo</span>
+            </div>
+        </header>
+        <main class="mdl-layout__content">
+            <div class="page-content">
+                <div class="demo-content">
+                    <div class="video-section">
+                        <!-- Voice Control Buttons -->
+                        <div class="button-group">
+                            <button id="startButton"
+                                class="mdl-button mdl-js-button mdl-button--fab mdl-button--mini-fab mdl-button--colored">
+                                <i class="material-icons">mic</i>
+                            </button>
+                            <button id="stopButton"
+                                class="mdl-button mdl-js-button mdl-button--fab mdl-button--mini-fab">
+                                <i class="material-icons">mic_off</i>
+                            </button>
+                        </div>
+
+                        <!-- Video Element -->
+                        <video id="videoElement" autoplay style="width: 640px; height: 480px;"></video>
+
+                        <!-- Hidden Canvas -->
+                        <canvas id="canvasElement" style="width: 640px; height: 480px;"></canvas>
+                    </div>
+
+                    <!-- Text Output -->
+                    <div id="chatLog" class="mdl-shadow--2dp"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script defer>
+        const URL = "ws://localhost:9083";
+        const video = document.getElementById("videoElement");
+        const canvas = document.getElementById("canvasElement");
+        let context;
+
+        // Initialize context here
+        window.addEventListener("load", () => {
+            context = canvas.getContext("2d");
+            setInterval(captureImage, 3000);
+        });
+
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        let stream = null;
+        let currentFrameB64;
+        let webSocket = null;
+        let audioContext = null;
+        let mediaRecorder = null;
+        let processor = null;
+        let pcmData = [];
+        let interval = null;
+        let initialized = false;
+        let audioInputContext;
+        let workletNode;
+
+
+        // Function to start screen capture
+        async function startScreenShare() {
+            try {
+                stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        width: { max: 640 },
+                        height: { max: 480 },
+                    },
+                });
+
+                video.srcObject = stream;
+                await new Promise(resolve => {
+                    video.onloadedmetadata = () => {
+                        console.log("video loaded metadata");
+                        resolve();
+                    }
+                });
+
+            } catch (err) {
+                console.error("Error accessing the screen: ", err);
+            }
+        }
+
+
+        // Function to capture an image from the shared screen
+        function captureImage() {
+            if (stream && video.videoWidth > 0 && video.videoHeight > 0 && context) {
+                canvas.width = 640;
+                canvas.height = 480;
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = canvas.toDataURL("image/jpeg").split(",")[1].trim();
+                currentFrameB64 = imageData;
+            }
+            else {
+                console.log("no stream or video metadata not loaded");
+            }
+        }
+
+
+
+        window.addEventListener("load", async () => {
+            await startScreenShare();
+            //setInterval(captureImage, 3000);
+
+            // Initialize audio context right away
+            await initializeAudioContext();
+
+            connect();
+        });
+
+        function connect() {
+            console.log("connecting: ", URL);
+
+            webSocket = new WebSocket(URL);
+
+            webSocket.onclose = (event) => {
+                console.log("websocket closed: ", event);
+                alert("Connection closed");
+            };
+
+            webSocket.onerror = (event) => {
+                console.log("websocket error: ", event);
+            };
+
+            webSocket.onopen = (event) => {
+                console.log("websocket open: ", event);
+                sendInitialSetupMessage();
+            };
+
+            webSocket.onmessage = receiveMessage;
+        }
+
+        function sendInitialSetupMessage() {
+
+            console.log("sending setup message");
+            setup_client_message = {
+                setup: {
+                    generation_config: { response_modalities: ["AUDIO"] },
+                },
+            };
+
+            webSocket.send(JSON.stringify(setup_client_message));
+        }
+
+
+        function sendVoiceMessage(b64PCM) {
+            if (webSocket == null) {
+                console.log("websocket not initialized");
+                return;
+            }
+
+            payload = {
+                realtime_input: {
+                    media_chunks: [{
+                        mime_type: "audio/pcm",
+                        data: b64PCM,
+                    },
+                    {
+                        mime_type: "image/jpeg",
+                        data: currentFrameB64,
+                    },
+                    ],
+                },
+            };
+
+            webSocket.send(JSON.stringify(payload));
+            console.log("sent: ", payload);
+        }
+
+        function receiveMessage(event) {
+            const messageData = JSON.parse(event.data);
+            const response = new Response(messageData);
+
+            if (response.text) {
+                displayMessage("GEMINI: " + response.text);
+            }
+            if (response.audioData) {
+                injestAudioChuckToPlay(response.audioData);
+            }
+        }
+
+
+        async function initializeAudioContext() {
+            if (initialized) return;
+
+            audioInputContext = new (window.AudioContext ||
+                window.webkitAudioContext)({
+                sampleRate: 24000
+            });
+            await audioInputContext.audioWorklet.addModule("pcm-processor.js");
+            workletNode = new AudioWorkletNode(audioInputContext, "pcm-processor");
+            workletNode.connect(audioInputContext.destination);
+            initialized = true;
+        }
+
+
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function convertPCM16LEToFloat32(pcmData) {
+            const inputArray = new Int16Array(pcmData);
+            const float32Array = new Float32Array(inputArray.length);
+
+            for (let i = 0; i < inputArray.length; i++) {
+                float32Array[i] = inputArray[i] / 32768;
+            }
+
+            return float32Array;
+        }
+
+
+        async function injestAudioChuckToPlay(base64AudioChunk) {
+            try {
+                if (audioInputContext.state === "suspended") {
+                    await audioInputContext.resume();
+                }
+                const arrayBuffer = base64ToArrayBuffer(base64AudioChunk);
+                const float32Data = convertPCM16LEToFloat32(arrayBuffer);
+
+                workletNode.port.postMessage(float32Data);
+            } catch (error) {
+                console.error("Error processing audio chunk:", error);
+            }
+        }
+
+
+        function recordChunk() {
+            const buffer = new ArrayBuffer(pcmData.length * 2);
+            const view = new DataView(buffer);
+            pcmData.forEach((value, index) => {
+                view.setInt16(index * 2, value, true);
+            });
+
+            const base64 = btoa(
+                String.fromCharCode.apply(null, new Uint8Array(buffer))
+            );
+
+            sendVoiceMessage(base64);
+            pcmData = [];
+        }
+
+        async function startAudioInput() {
+            audioContext = new AudioContext({
+                sampleRate: 16000,
+            });
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    channelCount: 1,
+                    sampleRate: 16000,
+                },
+            });
+
+            const source = audioContext.createMediaStreamSource(stream);
+            processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+            processor.onaudioprocess = (e) => {
+                const inputData = e.inputBuffer.getChannelData(0);
+                const pcm16 = new Int16Array(inputData.length);
+                for (let i = 0; i < inputData.length; i++) {
+                    pcm16[i] = inputData[i] * 0x7fff;
+                }
+                pcmData.push(...pcm16);
+            };
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
+            interval = setInterval(recordChunk, 3000);
+        }
+
+        function stopAudioInput() {
+            if (processor) {
+                processor.disconnect();
+            }
+            if (audioContext) {
+                audioContext.close();
+            }
+
+            clearInterval(interval);
+        }
+
+        function displayMessage(message) {
+            console.log(message);
+            addParagraphToDiv("chatLog", message);
+        }
+
+
+        function addParagraphToDiv(divId, text) {
+            const newParagraph = document.createElement("p");
+            newParagraph.textContent = text;
+            const div = document.getElementById(divId);
+            div.appendChild(newParagraph);
+        }
+
+        startButton.addEventListener('click', startAudioInput);
+        stopButton.addEventListener('click', stopAudioInput);
+
+
+        class Response {
+            constructor(data) {
+                this.text = null;
+                this.audioData = null;
+                this.endOfTurn = null;
+
+                if (data.text) {
+                    this.text = data.text
+                }
+
+                if (data.audio) {
+                    this.audioData = data.audio;
+                }
+            }
+        }
+    </script>
+
+</body>
+
+</html>
+class PCMProcessor extends AudioWorkletProcessor {
+    constructor() {
+        super();
+        this.buffer = new Float32Array();
+
+        // Correct way to handle messages in AudioWorklet
+        this.port.onmessage = (e) => {
+            const newData = e.data;
+            const newBuffer = new Float32Array(this.buffer.length + newData.length);
+            newBuffer.set(this.buffer);
+            newBuffer.set(newData, this.buffer.length);
+            this.buffer = newBuffer;
+        };
+    }
+
+    process(inputs, outputs, parameters) {
+        const output = outputs[0];
+        const channelData = output[0];
+
+        if (this.buffer.length >= channelData.length) {
+            channelData.set(this.buffer.slice(0, channelData.length));
+            this.buffer = this.buffer.slice(channelData.length);
+            return true;
+        }
+
+        return true;
+    }
+}
+
+registerProcessor('pcm-processor', PCMProcessor);
+import asyncio
+import json
+import os
+import websockets
+import base64
+import io
+import wave
+import logging
+from dotenv import load_dotenv
+
+from pydub import AudioSegment
+import google.generativeai as generative
+from google import genai
+
+load_dotenv()
+google_api_key = os.getenv("GOOGLE_API_KEY")
+
+# -----------------------------
+# Configuration & Logging Setup
+# -----------------------------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Set your API key (replace with your actual key)
+os.environ['GOOGLE_API_KEY'] = google_api_key
+generative.configure(api_key=os.environ['GOOGLE_API_KEY'])
+
+# Models for Gemini and transcription
+MODEL = "gemini-2.0-flash-exp"       # Gemini live model
+TRANSCRIPTION_MODEL = "gemini-1.5-flash-8b"  # Transcription model
+
+# Create the Gemini client
+client = genai.Client(http_options={'api_version': 'v1alpha'})
+
+# Optional: Maximum size for accumulating audio (5 MB)
+MAX_AUDIO_BUFFER_SIZE = 5 * 1024 * 1024
+
+# Set FFmpeg path for pydub (using your installed path)
+AudioSegment.converter = r"C:\ProgramData\chocolatey\bin\ffmpeg.EXE"
+logger.info("Using FFmpeg at %s", AudioSegment.converter)
+
+# -----------------------------
+# Helper Functions
+# -----------------------------
+def convert_pcm_to_mp3(pcm_data):
+    """
+    Converts raw PCM audio data to a base64-encoded MP3 string.
+    """
+    try:
+        # Write PCM data to an in-memory WAV file.
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, "wb") as wav_file:
+            wav_file.setnchannels(1)      # mono
+            wav_file.setsampwidth(2)        # 16-bit samples
+            # Adjust framerate if needed; here we use 24000 Hz
+            wav_file.setframerate(24000)
+            wav_file.writeframes(pcm_data)
+        wav_buffer.seek(0)
+        # Convert WAV to MP3 using pydub.
+        audio_segment = AudioSegment.from_wav(wav_buffer)
+        mp3_buffer = io.BytesIO()
+        audio_segment.export(mp3_buffer, format="mp3", codec="libmp3lame")
+        mp3_base64 = base64.b64encode(mp3_buffer.getvalue()).decode("utf-8")
+        return mp3_base64
+    except Exception as e:
+        logger.error("Error converting PCM to MP3: %s", e)
+        return None
+
+def transcribe_audio(audio_data):
+    """
+    Uses the Gemini 1.5 Flash transcription model to convert audio data into text.
+    """
+    try:
+        if not audio_data:
+            return "No audio data received."
+        mp3_audio_base64 = convert_pcm_to_mp3(audio_data)
+        if not mp3_audio_base64:
+            return "Audio conversion failed."
+        transcription_client = generative.GenerativeModel(model_name=TRANSCRIPTION_MODEL)
+        prompt = (
+            "Generate a transcript of the speech.\n"
+            "You are a helpful assistant for students who are learning and working on projects.\n"
+            "You will help them interact with the content and provide guidance.\n"
+            "You will not provide any other information or guidance.\n"
+            "Please do not include any other text in the response.\n"
+            "If you cannot hear the speech, please only say '<Not recognizable>'."
+        )
+        response = transcription_client.generate_content([
+            prompt,
+            {
+                "mime_type": "audio/mp3",
+                "data": base64.b64decode(mp3_audio_base64),
+            }
+        ])
+        return response.text
+    except Exception as e:
+        logger.error("Transcription error: %s", e)
+        return "Transcription failed."
+
+# -----------------------------
+# Gemini Session Handler
+# -----------------------------
+async def gemini_session_handler(client_websocket: websockets.WebSocketServerProtocol):
+    """
+    Handles a live Gemini session over a websocket.
+    It forwards incoming media (audio/image) to Gemini and sends back text/audio responses.
+    """
+    try:
+        # Wait for the initial configuration message from the client.
+        config_message = await client_websocket.recv()
+        config_data = json.loads(config_message)
+        config = config_data.get("setup", {})
+        logger.info("Received config: %s", config)
+
+        # Connect to Gemini Live API.
+        async with client.aio.live.connect(model=MODEL, config=config) as session:
+            logger.info("Connected to Gemini API")
+            # Initialize audio accumulation.
+            session.audio_data = b""
+
+            async def send_to_gemini():
+                """Forwards client messages (audio/image) to Gemini."""
+                try:
+                    async for message in client_websocket:
+                        try:
+                            data = json.loads(message)
+                            if "realtime_input" in data:
+                                for chunk in data["realtime_input"].get("media_chunks", []):
+                                    if chunk.get("mime_type") == "audio/pcm":
+                                        await session.send(input={"mime_type": "audio/pcm", "data": chunk["data"]})
+                                    elif chunk.get("mime_type") == "image/jpeg":
+                                        await session.send(input={"mime_type": "image/jpeg", "data": chunk["data"]})
+                        except Exception as e:
+                            logger.error("Error sending to Gemini: %s", e)
+                    logger.info("Client connection closed (send loop)")
+                except Exception as e:
+                    logger.error("Send loop exception: %s", e)
+                finally:
+                    logger.info("send_to_gemini closed")
+
+            async def receive_from_gemini():
+                """Receives responses from Gemini and relays them to the client."""
+                try:
+                    while True:
+                        try:
+                            logger.info("Waiting for response from Gemini...")
+                            async for response in session.receive():
+                                if response.server_content is None:
+                                    logger.warning("Unhandled server message: %s", response)
+                                    continue
+
+                                model_turn = response.server_content.model_turn
+                                if model_turn:
+                                    for part in model_turn.parts:
+                                        if hasattr(part, "text") and part.text:
+                                            # Forward text responses to the client.
+                                            await client_websocket.send(json.dumps({"text": part.text}))
+                                        elif hasattr(part, "inline_data") and part.inline_data:
+                                            # Forward audio responses to the client.
+                                            base64_audio = base64.b64encode(part.inline_data.data).decode("utf-8")
+                                            await client_websocket.send(json.dumps({"audio": base64_audio}))
+                                            # Accumulate audio for transcription.
+                                            session.audio_data += part.inline_data.data
+                                            if len(session.audio_data) > MAX_AUDIO_BUFFER_SIZE:
+                                                logger.warning("Audio buffer size exceeded: %d bytes", len(session.audio_data))
+
+                                if response.server_content.turn_complete:
+                                    logger.info("<Turn complete>")
+                                    # Once the turn is complete, transcribe accumulated audio.
+                                    transcribed_text = transcribe_audio(session.audio_data)
+                                    if transcribed_text:
+                                        await client_websocket.send(json.dumps({"text": transcribed_text}))
+                                    # Reset the audio buffer.
+                                    session.audio_data = b""
+                        except websockets.exceptions.ConnectionClosedOK:
+                            logger.info("Client connection closed normally (receive loop)")
+                            break
+                        except Exception as e:
+                            logger.error("Error receiving from Gemini: %s", e)
+                            break
+                except Exception as e:
+                    logger.error("Receive loop exception: %s", e)
+                finally:
+                    logger.info("Gemini connection closed (receive)")
+
+            # Run send and receive concurrently.
+            send_task = asyncio.create_task(send_to_gemini())
+            receive_task = asyncio.create_task(receive_from_gemini())
+            await asyncio.gather(send_task, receive_task)
+
+    except Exception as e:
+        logger.error("Error in Gemini session: %s", e)
+    finally:
+        logger.info("Gemini session closed.")
+
+# -----------------------------
+# WebSocket Server Entry Point
+# -----------------------------
+async def main() -> None:
+    async with websockets.serve(gemini_session_handler, "localhost", 9083):
+        logger.info("WebSocket server running on ws://localhost:9083 ...")
+        await asyncio.Future()  # Keep the server running indefinitely
+
+if __name__ == "__main__":
+    asyncio.run(main())

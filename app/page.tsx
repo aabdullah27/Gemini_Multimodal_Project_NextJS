@@ -1,114 +1,232 @@
-// app/page.tsx
 "use client";
-import { useState, useCallback } from 'react';
-import CameraPreview from './components/CameraPreview';
-import AudioPreview from './components/AudioPreview';
-import ScreenSharePreview from './components/ScreenSharePreview';
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { Video, Mic, Monitor } from "lucide-react";
+import { useState } from 'react';
+import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { ArrowRight, MessageSquare, Brain, Sparkles, Shield, Zap, Github, Linkedin, Instagram } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
-// Helper function to create message components
-const HumanMessage = ({ text }: { text: string }) => (
-  <div className="flex gap-3 items-start">
-    <Avatar className="h-8 w-8">
-      <AvatarImage src="/avatars/human.png" alt="Human" />
-      <AvatarFallback>H</AvatarFallback>
-    </Avatar>
-    <div className="flex-1 space-y-2">
-      <div className="flex items-center gap-2">
-        <p className="text-sm font-medium text-zinc-900">You</p>
-      </div>
-      <div className="rounded-lg bg-zinc-100 px-3 py-2 text-sm text-zinc-800">
-        {text}
-      </div>
-    </div>
-  </div>
-);
+const FeatureCard = ({ icon: Icon, title, description, index }: { icon: any, title: string, description: string, index: number }) => {
+  const [isHovered, setIsHovered] = useState(false);
 
-const GeminiMessage = ({ text }: { text: string }) => (
-  <div className="flex gap-3 items-start">
-    <Avatar className="h-8 w-8 bg-blue-600">
-      <AvatarImage src="/avatars/gemini.png" alt="Gemini" />
-      <AvatarFallback>AI</AvatarFallback>
-    </Avatar>
-    <div className="flex-1 space-y-2">
-      <div className="flex items-center gap-2">
-        <p className="text-sm font-medium text-zinc-900">Gemini</p>
-      </div>
-      <div className="rounded-lg bg-white border border-zinc-200 px-3 py-2 text-sm text-zinc-800">
-        {text}
-      </div>
-    </div>
-  </div>
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.5, delay: index * 0.1 }}
+      className="relative group h-full"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <motion.div 
+        className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-white/5 rounded-3xl blur-xl"
+        animate={{
+          scale: isHovered ? 1.05 : 1,
+        }}
+        transition={{ duration: 0.2 }}
+      />
+      <motion.div 
+        className="relative p-8 rounded-3xl border border-white/10 bg-zinc-900/50 backdrop-blur-xl h-full"
+        animate={{
+          y: isHovered ? -5 : 0,
+          scale: isHovered ? 1.02 : 1,
+        }}
+        transition={{ duration: 0.2 }}
+      >
+        <motion.div 
+          className="h-14 w-14 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 p-3 mb-6"
+          animate={{
+            rotate: isHovered ? 5 : 0,
+            scale: isHovered ? 1.1 : 1,
+          }}
+          transition={{ duration: 0.2 }}
+        >
+          <Icon className="w-full h-full text-white" />
+        </motion.div>
+        <h3 className="text-2xl font-semibold text-white mb-3">{title}</h3>
+        <p className="text-zinc-400 text-lg leading-relaxed">{description}</p>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+const SocialLink = ({ href, icon: Icon, label }: { href: string; icon: any; label: string }) => (
+  <Link 
+    href={href}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="text-zinc-400 hover:text-blue-400 transition-colors duration-200 flex items-center gap-2"
+  >
+    <Icon className="h-5 w-5" />
+    <span>{label}</span>
+  </Link>
 );
 
 export default function Home() {
-  const [messages, setMessages] = useState<{ type: 'human' | 'gemini', text: string }[]>([]);
-  const [mode, setMode] = useState<'camera' | 'audio' | 'screen'>('camera');
-
-  const handleTranscription = useCallback((transcription: string) => {
-    setMessages(prev => [...prev, { type: 'gemini', text: transcription }]);
-  }, []);
+  const [isHovered, setIsHovered] = useState(false);
 
   return (
-    <>
-      <h1 className="text-4xl font-bold text-zinc-800 p-8 pb-0">
-        Multimodal Live Chat
-      </h1>
-      <div className="flex gap-8 p-8">
-        <div className="flex flex-col gap-4">
-          <div className="flex gap-2">
-            <Button
-              variant={mode === 'camera' ? "default" : "outline"}
-              onClick={() => setMode('camera')}
-              size="sm"
+    <div className="min-h-screen">
+      {/* Hero Section */}
+      <section className="relative py-20 overflow-hidden">
+        <div className="absolute inset-0 bg-grid-white/[0.02] bg-[size:60px_60px]" />
+        <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-500/10 via-transparent to-white/5" />
+        
+        <div className="container mx-auto px-4 relative">
+          <div className="max-w-4xl mx-auto text-center space-y-8">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
             >
-              <Video className="h-4 w-4 mr-2" />
-              Camera Mode
-            </Button>
-            <Button
-              variant={mode === 'audio' ? "default" : "outline"}
-              onClick={() => setMode('audio')}
-              size="sm"
-            >
-              <Mic className="h-4 w-4 mr-2" />
-              Audio Mode
-            </Button>
-            <Button
-              variant={mode === 'screen' ? "default" : "outline"}
-              onClick={() => setMode('screen')}
-              size="sm"
-            >
-              <Monitor className="h-4 w-4 mr-2" />
-              Screen Share
-            </Button>
-          </div>
-          {mode === 'camera' ? (
-            <CameraPreview onTranscription={handleTranscription} />
-          ) : mode === 'audio' ? (
-            <AudioPreview onTranscription={handleTranscription} />
-          ) : (
-            <ScreenSharePreview onTranscription={handleTranscription} />
-          )}
-        </div>
+              <h1 className="text-5xl md:text-7xl font-bold">
+                <span className="bg-gradient-to-r from-white via-blue-200 to-blue-400 bg-clip-text text-transparent">
+                  Next-Gen AI Chat
+                </span>
+              </h1>
+              <p className="mt-6 text-xl text-zinc-400">
+                Experience the future of communication with our multimodal AI chat interface.
+                Seamlessly interact using voice, video, and screen sharing.
+              </p>
+            </motion.div>
 
-        <div className="w-[640px] bg-white">
-          <ScrollArea className="h-[540px] p-6">
-            <div className="space-y-6">
-              <GeminiMessage text="Hi! I'm Gemini. I can see and hear you. Let's chat!" />
-              {messages.map((message, index) => (
-                message.type === 'human' ? (
-                  <HumanMessage key={`msg-${index}`} text={message.text} />
-                ) : (
-                  <GeminiMessage key={`msg-${index}`} text={message.text} />
-                )
-              ))}
-            </div>
-          </ScrollArea>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.5 }}
+              className="flex flex-wrap gap-4 justify-center"
+            >
+              <Link href="/chat/camera">
+                <Button
+                  size="lg"
+                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg shadow-blue-500/25 px-8"
+                  onMouseEnter={() => setIsHovered(true)}
+                  onMouseLeave={() => setIsHovered(false)}
+                >
+                  Lets Chat
+                  <motion.div
+                    animate={{ x: isHovered ? 5 : 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <ArrowRight className="ml-2 h-5 w-5" />
+                  </motion.div>
+                </Button>
+              </Link>
+            </motion.div>
+          </div>
         </div>
-      </div>
-    </>
+      </section>
+
+      {/* Features Section */}
+      <section className="py-20 relative">
+        <div className="container mx-auto px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-center mb-16"
+          >
+            <h2 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent mb-4">
+              Powerful Features
+            </h2>
+            <p className="text-zinc-400 max-w-2xl mx-auto text-lg">
+              Experience the next generation of AI communication with our cutting-edge features
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <FeatureCard
+              index={0}
+              icon={MessageSquare}
+              title="Multimodal Chat"
+              description="Seamlessly switch between text, voice, and video communication modes"
+            />
+            <FeatureCard
+              index={1}
+              icon={Brain}
+              title="Advanced AI"
+              description="Powered by Google's Gemini, offering human-like understanding and responses"
+            />
+            <FeatureCard
+              index={2}
+              icon={Sparkles}
+              title="Real-time Processing"
+              description="Get instant responses with our lightning-fast AI processing"
+            />
+            <FeatureCard
+              index={3}
+              icon={Shield}
+              title="Secure & Private"
+              description="Your conversations are encrypted and private by default"
+            />
+            <FeatureCard
+              index={4}
+              icon={Zap}
+              title="High Performance"
+              description="Built with Next.js for optimal speed and reliability"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-20 relative">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-white/5" />
+        <div className="container mx-auto px-4 relative">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="max-w-3xl mx-auto text-center space-y-8"
+          >
+            <h2 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">
+              Ready to Experience the Future?
+            </h2>
+            <p className="text-zinc-400">
+              Join thousands of users who are already experiencing the next generation of AI communication.
+            </p>
+            <div className="flex justify-center">
+              <Link href="/chat/camera">
+                <Button
+                  size="lg"
+                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg shadow-blue-500/25 px-8"
+                >
+                  Get Started Now
+                  <ArrowRight className="ml-2 h-5 w-5" />
+                </Button>
+              </Link>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-8 border-t border-white/10">
+        <div className="container mx-auto px-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <p className="text-zinc-400">
+              Made with ❤️ by Abdullah
+            </p>
+            <div className="flex items-center gap-6">
+              <SocialLink 
+                href="https://github.com/aabdullah27" 
+                icon={Github}
+                label="GitHub"
+              />
+              <SocialLink 
+                href="https://www.linkedin.com/in/muhammad-abdullah-py-dev/" 
+                icon={Linkedin}
+                label="LinkedIn"
+              />
+              <SocialLink 
+                href="https://www.instagram.com/abdllah._.77/" 
+                icon={Instagram}
+                label="Instagram"
+              />
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }

@@ -7,7 +7,6 @@ import { Button } from "../../components/ui/button";
 import { Video, VideoOff } from "lucide-react";
 import { GeminiWebSocket } from '../services/geminiWebSocket';
 import { Base64 } from 'js-base64';
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 interface CameraPreviewProps {
   onTranscription: (text: string) => void;
@@ -66,6 +65,11 @@ export default function CameraPreview({ onTranscription }: CameraPreviewProps) {
       setStream(null);
     } else {
       try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          console.error('getUserMedia is not supported in this browser.');
+          return;
+        }
+
         const videoStream = await navigator.mediaDevices.getUserMedia({ 
           video: true,
           audio: false
@@ -264,12 +268,13 @@ export default function CameraPreview({ onTranscription }: CameraPreviewProps) {
 
   return (
     <Card className="relative w-[640px] aspect-video bg-zinc-100 dark:bg-zinc-900 rounded-lg overflow-hidden border-zinc-200 dark:border-zinc-800">
-      <CardContent className="p-0">
+      <CardContent className="p-0 h-full">
         <video
           ref={videoRef}
           autoPlay
+          muted
           playsInline
-          className="w-full h-full bg-muted rounded-lg overflow-hidden"
+          className="w-full h-full object-cover bg-muted"
         />
         
         {/* Connection Status Overlay */}

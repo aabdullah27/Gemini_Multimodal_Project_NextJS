@@ -201,7 +201,7 @@ export default function AudioPreview({ onTranscription }: AudioPreviewProps) {
 
   return (
     <div className="flex flex-col items-center gap-4">
-      <div className="relative w-[640px] aspect-video bg-zinc-100 dark:bg-zinc-900 rounded-lg overflow-hidden">
+      <div className="relative w-full md:w-[640px] aspect-video bg-zinc-100 dark:bg-zinc-900 rounded-lg overflow-hidden">
         {/* Wave Animation */}
         <canvas
           ref={canvasRef}

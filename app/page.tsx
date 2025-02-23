@@ -1,11 +1,21 @@
 "use client";
-import { useState } from 'react';
+import { useState, ComponentType } from 'react'; // Add ComponentType import
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { ArrowRight, MessageSquare, Brain, Sparkles, Shield, Zap, Github, Linkedin, Instagram } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const FeatureCard = ({ icon: Icon, title, description, index }: { icon: any, title: string, description: string, index: number }) => {
+const FeatureCard = ({ 
+  icon: Icon, 
+  title, 
+  description, 
+  index 
+}: { 
+  icon: ComponentType<{ className?: string }>; // Use ComponentType instead of any
+  title: string; 
+  description: string; 
+  index: number; 
+}) => {
   const [isHovered, setIsHovered] = useState(false);
 
   return (
@@ -50,7 +60,15 @@ const FeatureCard = ({ icon: Icon, title, description, index }: { icon: any, tit
   );
 };
 
-const SocialLink = ({ href, icon: Icon, label }: { href: string; icon: any; label: string }) => (
+const SocialLink = ({ 
+  href, 
+  icon: Icon, 
+  label 
+}: { 
+  href: string; 
+  icon: ComponentType<{ className?: string }>; // Use ComponentType instead of any
+  label: string; 
+}) => (
   <Link 
     href={href}
     target="_blank"

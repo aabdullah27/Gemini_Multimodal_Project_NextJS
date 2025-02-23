@@ -57,34 +57,34 @@ export default function ScreenSharePreview({ onTranscription }: ScreenSharePrevi
             echoCancellation: true,
             autoGainControl: true,
             noiseSuppression: true,
-          }
+          },
         });
-
+  
         // Then get screen share permission
         const screenStream = await navigator.mediaDevices.getDisplayMedia({
           video: {
-            cursor: "always"
-          },
-          audio: false
+            cursor: "always", // Fix: Use type casting
+          } as MediaTrackConstraints & { cursor: "always" | "motion" | "never" },
+          audio: false,
         });
-
+  
         // Initialize audio context
         audioContextRef.current = new AudioContext({
           sampleRate: 16000,
         });
-
+  
         // Set up video preview
         if (videoRef.current) {
           videoRef.current.srcObject = screenStream;
           videoRef.current.muted = true;
         }
-
+  
         // Combine screen and audio tracks
         const combinedStream = new MediaStream([
           ...screenStream.getTracks(),
-          ...audioStream.getTracks()
+          ...audioStream.getTracks(),
         ]);
-
+  
         // Handle screen share stop
         screenStream.getVideoTracks()[0].addEventListener('ended', () => {
           console.log("[ScreenShare] Screen sharing stopped by user");
@@ -97,7 +97,7 @@ export default function ScreenSharePreview({ onTranscription }: ScreenSharePrevi
           }
           setStream(null);
         });
-
+  
         setStream(combinedStream);
         setIsStreaming(true);
       } catch (err) {

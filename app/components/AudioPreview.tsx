@@ -19,14 +19,23 @@ export default function AudioPreview({ onTranscription }: AudioPreviewProps) {
   const geminiWsRef = useRef<GeminiWebSocket | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
   const [isModelSpeaking, setIsModelSpeaking] = useState(false);
-  const [outputAudioLevel, setOutputAudioLevel] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const animationFrameRef = useRef<number>();
+  const animationFrameRef = useRef<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
 
   const cleanupAudio = useCallback(() => {
+    if (workletNodeRef.current) {
+      workletNodeRef.current.disconnect();
+      workletNodeRef.current = null;
+    }
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
+    }
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
   }, []);
 
@@ -38,6 +47,8 @@ export default function AudioPreview({ onTranscription }: AudioPreviewProps) {
   }, []);
 
   const toggleAudio = async () => {
+    setError(null);
+    
     if (isStreaming && stream) {
       setIsStreaming(false);
       cleanupWebSocket();
@@ -52,15 +63,20 @@ export default function AudioPreview({ onTranscription }: AudioPreviewProps) {
             channelCount: 1,
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true
-          }
+            autoGainControl: true,
+          },
         });
 
-        audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+        audioContextRef.current = new AudioContext({
+          sampleRate: 16000,
+          latencyHint: 'interactive',
+        });
+        
         setStream(audioStream);
         setIsStreaming(true);
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Error accessing microphone:', err);
+        setError(err instanceof Error ? err.message : 'Failed to access microphone');
         cleanupAudio();
         setIsStreaming(false);
         setStream(null);
@@ -68,7 +84,7 @@ export default function AudioPreview({ onTranscription }: AudioPreviewProps) {
     }
   };
 
-  // WebSocket setup
+  // WebSocket setup with improved error handling
   useEffect(() => {
     if (!isStreaming) {
       setConnectionStatus('disconnected');
@@ -76,23 +92,30 @@ export default function AudioPreview({ onTranscription }: AudioPreviewProps) {
     }
 
     setConnectionStatus('connecting');
-    geminiWsRef.current = new GeminiWebSocket(
-      (text) => {
-        console.log("[Audio] Received from Gemini:", text);
-      },
-      () => {
-        console.log("[Audio] WebSocket connected");
-        setConnectionStatus('connected');
-      },
-      (isPlaying) => {
-        setIsModelSpeaking(isPlaying);
-      },
-      (level) => {
-        setOutputAudioLevel(level);
-      },
-      onTranscription
-    );
-    geminiWsRef.current.connect();
+    try {
+      geminiWsRef.current = new GeminiWebSocket(
+        (text) => {
+          console.log("[Audio] Received from Gemini:", text);
+        },
+        () => {
+          console.log("[Audio] WebSocket connected");
+          setConnectionStatus('connected');
+          setError(null);
+        },
+        (isPlaying) => {
+          setIsModelSpeaking(isPlaying);
+        },
+        () => {
+          // Audio level callback not used in this component
+        },
+        onTranscription
+      );
+      geminiWsRef.current.connect();
+    } catch (err: unknown) {
+      console.error('[Audio] WebSocket connection failed:', err);
+      setError('Failed to connect to Gemini service');
+      setConnectionStatus('disconnected');
+    }
 
     return () => {
       cleanupWebSocket();
@@ -100,7 +123,7 @@ export default function AudioPreview({ onTranscription }: AudioPreviewProps) {
     };
   }, [isStreaming, onTranscription, cleanupWebSocket]);
 
-  // Audio processing setup
+  // Enhanced audio processing setup
   useEffect(() => {
     if (!isStreaming || !stream || !audioContextRef.current) return;
 
@@ -121,10 +144,12 @@ export default function AudioPreview({ onTranscription }: AudioPreviewProps) {
           }
         });
 
+        workletNodeRef.current = workletNode;
+
         workletNode.port.onmessage = (event) => {
           if (!event.data) return;
           const { pcmData, level } = event.data;
-          setAudioLevel(Math.min(level, 100));
+          setAudioLevel(Math.min(level * 1.2, 100)); // Slightly amplified for better visualization
           if (pcmData && !isModelSpeaking && geminiWsRef.current) {
             geminiWsRef.current.sendMediaChunk(
               Base64.fromUint8Array(new Uint8Array(pcmData)),
@@ -141,8 +166,9 @@ export default function AudioPreview({ onTranscription }: AudioPreviewProps) {
           workletNode.disconnect();
           console.log("[Audio] Audio processing disconnected");
         };
-      } catch (error) {
+      } catch (error: unknown) {
         console.error('[Audio] Audio setup failed:', error);
+        setError('Failed to initialize audio processing');
         cleanupAudio();
       }
     };
@@ -150,109 +176,141 @@ export default function AudioPreview({ onTranscription }: AudioPreviewProps) {
     setupAudioProcessing();
   }, [isStreaming, stream, cleanupAudio, isModelSpeaking]);
 
-  // Smooth wave animation
+  // Improved wave animation
   useEffect(() => {
-    const canvasWidth = 640;
-    const canvasHeight = 200;
-    const animate = () => {
-      if (!canvasRef.current || !audioLevel) return;
-      
-      const ctx = canvasRef.current.getContext('2d');
+    if (!canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
+    
+    const drawWave = () => {
       if (!ctx) return;
 
-      // Fade-out effect for smoother transitions
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+      // Clear canvas with a fade effect
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
       ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-      // Dynamic line thickness based on audio level
-      ctx.lineWidth = 2 + (audioLevel * 3);
+      const centerY = canvasHeight / 2;
+      const amplitude = (audioLevel / 100) * (canvasHeight / 3);
       
-      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-      
-      // Smoother wave animation with bezier curves
+      // Draw the main waveform
       ctx.beginPath();
-      ctx.moveTo(0, canvasHeight/2);
-      
-      const segmentWidth = canvasWidth / 10;
-      for (let i = 0; i < 10; i++) {
-        const x = i * segmentWidth + segmentWidth/2;
-        const y = canvasHeight/2 + Math.sin(Date.now()/200 + x/50) * audioLevel * 20;
+      ctx.moveTo(0, centerY);
+
+      for (let x = 0; x < canvasWidth; x++) {
+        const frequency = 0.02;
+        const time = Date.now() * 0.003;
         
-        ctx.bezierCurveTo(
-          x - segmentWidth/2, canvasHeight/2,
-          x - segmentWidth/4, y,
-          x, y
-        );
+        // Combine multiple sine waves for a more complex animation
+        const y = centerY + 
+          Math.sin(x * frequency + time) * amplitude +
+          Math.sin(x * frequency * 2 + time * 1.5) * (amplitude * 0.5);
+
+        ctx.lineTo(x, y);
       }
 
-      ctx.strokeStyle = isModelSpeaking ? '#10b981' : '#059669';
+      // Create gradient for the line
+      const gradient = ctx.createLinearGradient(0, 0, canvasWidth, 0);
+      if (isModelSpeaking) {
+        gradient.addColorStop(0, '#059669');
+        gradient.addColorStop(1, '#10b981');
+      } else {
+        gradient.addColorStop(0, '#3b82f6');
+        gradient.addColorStop(1, '#60a5fa');
+      }
+
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = 2 + (audioLevel * 0.05);
       ctx.stroke();
+
+      // Add glow effect
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = isModelSpeaking ? '#10b981' : '#3b82f6';
       
-      requestAnimationFrame(animate);
+      animationFrameRef.current = requestAnimationFrame(drawWave);
     };
 
-    animate();
+    drawWave();
+
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isStreaming, isModelSpeaking, outputAudioLevel, audioLevel]);
+  }, [audioLevel, isModelSpeaking]);
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="relative w-full md:w-[640px] aspect-video bg-zinc-100 dark:bg-zinc-900 rounded-lg overflow-hidden">
-        {/* Wave Animation */}
-        <canvas
-          ref={canvasRef}
-          width={640}
-          height={200}
-          className="w-full h-full"
-        />
-        
-        {/* Microphone Button - Positioned at the right */}
-        <div className="absolute right-4 bottom-4">
+    <div className="relative w-full max-w-2xl mx-auto">
+      <div className="relative rounded-2xl border border-white/10 bg-zinc-900/50 backdrop-blur-xl overflow-hidden">
+        {/* Status Bar */}
+        <div className="absolute top-4 right-4 z-10 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-sm">
+          <div className={cn(
+            "h-2 w-2 rounded-full",
+            connectionStatus === 'connected' ? 'bg-green-500' :
+            connectionStatus === 'connecting' ? 'bg-yellow-500' :
+            'bg-red-500'
+          )} />
+          <span className="text-xs font-medium text-white">
+            {connectionStatus === 'connected' ? 'Connected' :
+             connectionStatus === 'connecting' ? 'Connecting...' :
+             'Disconnected'}
+          </span>
+        </div>
+
+        {/* Canvas Container */}
+        <div className="relative aspect-[3/1] w-full">
+          <canvas
+            ref={canvasRef}
+            width={640}
+            height={200}
+            className="w-full h-full"
+          />
+          
+          {/* Error Message */}
+          {error && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/20 backdrop-blur-sm">
+                <p className="text-sm text-red-500">{error}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Mic Button */}
           <Button
-            size="icon"
-            variant={isStreaming ? "default" : "outline"}
             onClick={toggleAudio}
+            size="icon"
             className={cn(
-              "rounded-full w-12 h-12",
-              "transition-all duration-300",
+              "absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full w-12 h-12 transition-all duration-200",
               isStreaming 
-                ? "bg-green-500/50 hover:bg-green-500/70 text-white backdrop-blur-sm"
-                : "bg-zinc-100/10 hover:bg-zinc-100/20 backdrop-blur-sm"
+                ? "bg-red-500/80 hover:bg-red-500 text-white" 
+                : "bg-blue-500/80 hover:bg-blue-500 text-white"
             )}
           >
             {isStreaming ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
           </Button>
         </div>
-      </div>
 
-      {/* Status Text */}
-      <div className={cn(
-        "flex items-center gap-2 text-sm font-medium",
-        "transition-all duration-300",
-        isModelSpeaking ? "text-emerald-500" : "text-zinc-500"
-      )}>
-        <div className={cn(
-          "w-1.5 h-1.5 rounded-full",
-          isModelSpeaking 
-            ? "bg-emerald-500 animate-pulse"
-            : isStreaming 
-              ? "bg-green-500 animate-[pulse_1.5s_ease-in-out_infinite]"
-              : "bg-zinc-400"
-        )} />
-        {!isStreaming 
-          ? "Click to start"
-          : connectionStatus !== 'connected'
-            ? connectionStatus === 'connecting' 
-              ? "Connecting..."
-              : "Disconnected"
-            : isModelSpeaking 
-              ? "Assistant is speaking..."
-              : "Listening..."
-        }
+        {/* Audio Level Indicator */}
+        {isStreaming && (
+          <div className="absolute bottom-4 left-4 right-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-black/50 backdrop-blur-sm">
+            <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-500 transition-all duration-100"
+                style={{ width: `${audioLevel}%` }}
+              />
+            </div>
+            {isModelSpeaking && (
+              <div className="flex items-center gap-1">
+                <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-xs text-white">AI Speaking</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

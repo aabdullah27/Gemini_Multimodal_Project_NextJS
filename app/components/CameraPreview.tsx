@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/button";
 import { Video, VideoOff } from "lucide-react";
 import { GeminiWebSocket } from '../services/geminiWebSocket';
 import { Base64 } from 'js-base64';
+import { motion } from 'framer-motion';
 
 interface CameraPreviewProps {
   onTranscription: (text: string) => void;
@@ -65,11 +66,6 @@ export default function CameraPreview({ onTranscription }: CameraPreviewProps) {
       setStream(null);
     } else {
       try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          console.error('getUserMedia is not supported in this browser.');
-          return;
-        }
-
         const videoStream = await navigator.mediaDevices.getUserMedia({ 
           video: true,
           audio: false
@@ -224,6 +220,7 @@ export default function CameraPreview({ onTranscription }: CameraPreviewProps) {
         };
       } catch (error) {
         if (isActive) {
+          console.error('[Camera] Audio setup failed:', error);
           cleanupAudio();
           setIsAudioSetup(false);
         }
@@ -267,51 +264,97 @@ export default function CameraPreview({ onTranscription }: CameraPreviewProps) {
   };
 
   return (
-    <Card className="relative w-[640px] aspect-video bg-zinc-100 dark:bg-zinc-900 rounded-lg overflow-hidden border-zinc-200 dark:border-zinc-800">
-      <CardContent className="p-0 h-full">
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          playsInline
-          className="w-full h-full object-cover bg-muted"
-        />
-        
-        {/* Connection Status Overlay */}
-        {isStreaming && (
-          <div className={`absolute top-2 left-2 flex items-center gap-2 px-3 py-1 rounded-full backdrop-blur-sm ${connectionStatus === 'connected' ? 'bg-green-500/20 text-green-500' : connectionStatus === 'connecting' ? 'bg-yellow-500/20 text-yellow-500' : 'bg-red-500/20 text-red-500'}`}>
-            <div className="w-2 h-2 rounded-full animate-pulse" />
-            <span className="text-sm font-medium">
-              {connectionStatus === 'connected' ? 'Connected' : 
-               connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+    <Card className="relative overflow-hidden">
+      <CardContent className="p-0">
+        <div 
+          className="relative aspect-video rounded-lg overflow-hidden bg-zinc-900 cursor-pointer"
+          onClick={!isStreaming ? toggleCamera : undefined}
+          role="button"
+          tabIndex={0}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              !isStreaming && toggleCamera();
+            }
+          }}
+        >
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            className="w-full h-full object-cover"
+          />
+          
+          {/* Connection Status Indicator */}
+          <div className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-sm">
+            <div className={`h-2 w-2 rounded-full ${
+              connectionStatus === 'connected' ? 'bg-green-500' :
+              connectionStatus === 'connecting' ? 'bg-yellow-500' :
+              'bg-red-500'
+            }`} />
+            <span className="text-xs font-medium text-white">
+              {connectionStatus === 'connected' ? 'Connected' :
+               connectionStatus === 'connecting' ? 'Connecting...' :
+               'Disconnected'}
             </span>
           </div>
-        )}
 
-        <Button
-          onClick={toggleCamera}
-          size="icon"
-          className={`absolute left-1/2 bottom-4 -translate-x-1/2 rounded-full w-12 h-12 backdrop-blur-sm transition-colors
-            ${isStreaming 
-              ? 'bg-red-500/50 hover:bg-red-500/70 text-white' 
-              : 'bg-green-500/50 hover:bg-green-500/70 text-white'
-            }`}
-        >
-          {isStreaming ? <VideoOff className="h-6 w-6" /> : <Video className="h-6 w-6" />}
-        </Button>
-      </CardContent>
-      {isStreaming && (
-        <div className="w-full h-2 rounded-full bg-green-100">
-          <div
-            className="h-full rounded-full transition-all bg-green-500"
-            style={{ 
-              width: `${isModelSpeaking ? outputAudioLevel : audioLevel}%`,
-              transition: 'width 100ms ease-out'
-            }}
-          />
+          {/* Audio Level Indicator */}
+          {isStreaming && (
+            <div className="absolute bottom-4 left-4 right-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-black/50 backdrop-blur-sm">
+              <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-blue-500"
+                  initial={{ width: "0%" }}
+                  animate={{ width: `${Math.min(audioLevel * 100, 100)}%` }}
+                  transition={{ duration: 0.1 }}
+                />
+              </div>
+              {isModelSpeaking && (
+                <div className="flex items-center gap-1">
+                  <div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                  <span className="text-xs text-white">AI Speaking</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Camera Controls */}
+          {isStreaming && (
+            <div className="absolute bottom-4 right-4 flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleCamera();
+                }}
+              >
+                <VideoOff className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {/* Loading State */}
+          {!isStreaming && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <motion.div
+                className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/10"
+                animate={{ scale: [1, 1.02, 1] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+              >
+                <div className="flex items-center gap-2">
+                  <Video className="h-4 w-4" />
+                  <span className="text-sm font-medium text-white">Click to start camera</span>
+                </div>
+              </motion.div>
+            </div>
+          )}
+
+          {/* Hidden canvas for video processing */}
+          <canvas ref={videoCanvasRef} className="hidden" />
         </div>
-      )}
-      <canvas ref={videoCanvasRef} className="hidden" />
+      </CardContent>
     </Card>
   );
 }

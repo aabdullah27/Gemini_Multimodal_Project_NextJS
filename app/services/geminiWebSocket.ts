@@ -1,4 +1,3 @@
-import { Base64 } from 'js-base64';
 import { TranscriptionService } from './transcriptionService';
 import { pcmToWav } from '../utils/audioUtils';
 
@@ -234,7 +233,7 @@ export class GeminiWebSocket {
       try {
         this.currentSource.stop();
       } catch (e) {
-        // Ignore errors if already stopped
+        console.error("Error stopping audio source:", e);
       }
       this.currentSource = null;
     }

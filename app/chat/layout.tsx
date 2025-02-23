@@ -4,8 +4,16 @@ import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Video, Mic, Monitor } from "lucide-react";
 import { motion } from "framer-motion";
+import { ComponentType } from 'react'; // Add this import
 
-const NavLink = ({ href, icon: Icon, label }: { href: string; icon: any; label: string }) => {
+// Define the type for the icon prop
+interface NavLinkProps {
+  href: string;
+  icon: ComponentType<{ className?: string }>; // Use ComponentType instead of any
+  label: string;
+}
+
+const NavLink = ({ href, icon: Icon, label }: NavLinkProps) => {
   const pathname = usePathname();
   const isActive = pathname === href;
 

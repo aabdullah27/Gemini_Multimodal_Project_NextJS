@@ -18,7 +18,7 @@ export class TranscriptionService {
       if (typeof window !== 'undefined') {
         apiKey = localStorage.getItem('gemini-api-key') || '';
       }
-      apiKey = apiKey || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+      apiKey = apiKey || process.env.GEMINI_API_KEY || '';
 
       if (!apiKey) {
         throw new Error('No Gemini API key found. Please set it in the settings.');

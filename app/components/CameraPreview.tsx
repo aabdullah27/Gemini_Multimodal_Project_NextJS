@@ -27,7 +27,6 @@ export default function CameraPreview({ onTranscription }: CameraPreviewProps) {
   const [isWebSocketReady, setIsWebSocketReady] = useState(false);
   const imageIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isModelSpeaking, setIsModelSpeaking] = useState(false);
-  const [outputAudioLevel, setOutputAudioLevel] = useState(0);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
 
   const cleanupAudio = useCallback(() => {
@@ -124,8 +123,8 @@ export default function CameraPreview({ onTranscription }: CameraPreviewProps) {
       (isPlaying) => {
         setIsModelSpeaking(isPlaying);
       },
-      (level) => {
-        setOutputAudioLevel(level);
+      () => {
+
       },
       onTranscription
     );
@@ -273,7 +272,7 @@ export default function CameraPreview({ onTranscription }: CameraPreviewProps) {
           tabIndex={0}
           onKeyPress={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
-              !isStreaming && toggleCamera();
+              if (!isStreaming) toggleCamera(); // Ensure function call
             }
           }}
         >
